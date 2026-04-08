@@ -12,6 +12,11 @@ const protectRoute = asyncHandler(async (req, res, next) => {
       const resp = await User.findById(decodedToken.userId).select(
         "isAdmin email"
       );
+      if (!resp) {
+        return res
+          .status(401)
+          .json({ status: false, message: "User not found. Please login again." });
+      }
 
       req.user = {
         email: resp.email,

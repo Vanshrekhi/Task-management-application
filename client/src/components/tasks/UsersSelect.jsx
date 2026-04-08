@@ -6,7 +6,7 @@ import { useGetTeamListsQuery } from "../../redux/slices/api/userApiSlice.js";
 import { getInitials } from "../../utils/index.js";
 
 export default function UserList({ team, setTeam }) {
-  const { data, isLoading } = useGetTeamListsQuery({ search: "" });
+  const { data = [] } = useGetTeamListsQuery({ search: "" });
   const [selectedUsers, setSelectedUsers] = useState([]);
 
   const handleChange = (el) => {
@@ -15,12 +15,16 @@ export default function UserList({ team, setTeam }) {
   };
 
   useEffect(() => {
-    if (team?.length < 1) {
-      data && setSelectedUsers([data[0]]);
-    } else {
-      setSelectedUsers(team);
-    }
-  }, [isLoading]);
+    const incomingTeam = Array.isArray(team) ? team : [];
+
+    // team can be an array of IDs (new selection) or user objects (edit mode)
+    const hasIds = incomingTeam.length > 0 && typeof incomingTeam[0] === "string";
+    const normalizedUsers = hasIds
+      ? data.filter((user) => incomingTeam.includes(user._id))
+      : incomingTeam.filter((user) => user && user._id);
+
+    setSelectedUsers(normalizedUsers);
+  }, [team, data]);
 
   return (
     <div className=''>
@@ -33,7 +37,9 @@ export default function UserList({ team, setTeam }) {
         <div className='relative mt-1'>
           <Listbox.Button className='relative w-full cursor-default rounded bg-white pl-3 pr-10 text-left px-3 py-2.5 2xl:py-3 border border-gray-300 dark:border-gray-600 sm:text-sm'>
             <span className='block truncate'>
-              {selectedUsers?.map((user) => user.name).join(", ")}
+              {selectedUsers.length
+                ? selectedUsers.map((user) => user.name).join(", ")
+                : "Select team members"}
             </span>
 
             <span className='pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2'>

@@ -1,7 +1,8 @@
 const USERS_URL = "/user";
 
 const TASKS_URL = "/task";
+const CHAT_URL = "/chat";
 
 const ADMIN_URL = "/admin";
 
-export { USERS_URL, TASKS_URL, ADMIN_URL };
+export { USERS_URL, TASKS_URL, ADMIN_URL, CHAT_URL };

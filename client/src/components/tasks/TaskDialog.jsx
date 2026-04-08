@@ -174,11 +174,6 @@ export default function TaskDialog({ task }) {
       onClick: () => navigate(`/task/${task._id}`),
     },
     {
-      label: "Edit",
-      icon: <MdOutlineEdit className='mr-2 h-5 w-5' aria-hidden='true' />,
-      onClick: () => setOpenEdit(true),
-    },
-    {
       label: "Add Sub-Task",
       icon: <MdAdd className='mr-2 h-5 w-5' aria-hidden='true' />,
       onClick: () => setOpen(true),
@@ -189,6 +184,13 @@ export default function TaskDialog({ task }) {
       onClick: () => duplicateHanlder(),
     },
   ];
+  if (user.isAdmin) {
+    items.splice(1, 0, {
+      label: "Edit",
+      icon: <MdOutlineEdit className='mr-2 h-5 w-5' aria-hidden='true' />,
+      onClick: () => setOpenEdit(true),
+    });
+  }
 
   return (
     <>

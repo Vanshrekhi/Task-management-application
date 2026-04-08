@@ -6,7 +6,17 @@ import { Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import { Toaster } from "sonner";
 import { Toaster as HotToaster } from "react-hot-toast";
 import { Navbar, Sidebar } from "./components";
-import { Dashboard, AdminDashboard, EmployeeDashboard, Login, TaskDetail, Tasks, Trash, Users } from "./pages";
+import {
+  Dashboard,
+  AdminDashboard,
+  EmployeeDashboard,
+  ChatRoom,
+  Login,
+  TaskDetail,
+  Tasks,
+  Trash,
+  Users,
+} from "./pages";
 import Register from "./pages/Register"; // 👈 Register import
 import { setOpenSidebar } from "./redux/slices/authSlice";
 import NotificationToasts from "./components/NotificationToasts";
@@ -116,6 +126,7 @@ const App = () => {
             <Route path='/trashed' element={<Trash />} />
             <Route path='/task/:id' element={<TaskDetail />} />
             <Route path='/team' element={<Users />} />
+            <Route path='/chat' element={<ChatRoom />} />
           </Route>
 
           <Route path='/log-in' element={<Login />} />

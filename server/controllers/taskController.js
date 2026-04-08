@@ -114,9 +114,16 @@ const duplicateTask = asyncHandler(async (req, res) => {
 
 const updateTask = asyncHandler(async (req, res) => {
   const { id } = req.params;
+  const { isAdmin } = req.user;
   const { title, date, team, stage, priority, assets } = req.body;
 
   try {
+    if (!isAdmin) {
+      return res
+        .status(403)
+        .json({ status: false, message: "Only admins can edit task details." });
+    }
+
     const task = await Task.findById(id);
 
     const prevTeam = (task.team || []).map(String).sort().join(",");

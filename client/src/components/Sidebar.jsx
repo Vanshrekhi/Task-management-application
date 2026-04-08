@@ -1,5 +1,6 @@
 import clsx from "clsx";
 import React from "react";
+import { BsChatDots } from "react-icons/bs";
 import { FaTasks, FaTrashAlt, FaUsers } from "react-icons/fa";
 import {
   MdDashboard,
@@ -44,6 +45,11 @@ const linkData = [
     icon: <FaUsers />,
   },
   {
+    label: "Chat",
+    link: "chat",
+    icon: <BsChatDots />,
+  },
+  {
     label: "Trash",
     link: "trashed",
     icon: <FaTrashAlt />,
@@ -56,7 +62,9 @@ const Sidebar = () => {
   const dispatch = useDispatch();
   const location = useLocation();
   const path = location.pathname.split("/")[1];
-  const sidebarLinks = user?.isAdmin ? linkData : linkData.slice(0, 5);
+  const sidebarLinks = user?.isAdmin
+    ? linkData
+    : linkData.filter((item) => !["Team", "Trash"].includes(item.label));
 
   const closeSidebar = () => {
     dispatch(setOpenSidebar(false));

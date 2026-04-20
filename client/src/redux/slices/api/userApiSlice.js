@@ -1,4 +1,4 @@
-import { USERS_URL } from "../../../utils/contants";
+import { AUTH_URL, USERS_URL } from "../../../utils/contants";
 import { apiSlice } from "../apiSlice";
 
 export const userApiSlice = apiSlice.injectEndpoints({
@@ -13,11 +13,25 @@ export const userApiSlice = apiSlice.injectEndpoints({
     }),
 
     getTeamLists: builder.query({
-      query: ({ search }) => ({
-        url: `${USERS_URL}/get-team?search=${search}`,
-        method: "GET",
-        credentials: "include",
-      }),
+      query: ({
+        search = "",
+        scope = "",
+        department = "",
+        year = "",
+        section = "",
+      } = {}) => {
+        const q = new URLSearchParams();
+        q.set("search", search);
+        q.set("scope", scope);
+        q.set("department", department);
+        q.set("year", year);
+        q.set("section", section);
+        return {
+          url: `${USERS_URL}/users?${q.toString()}`,
+          method: "GET",
+          credentials: "include",
+        };
+      },
     }),
 
     getNotifications: builder.query({
@@ -62,6 +76,30 @@ export const userApiSlice = apiSlice.injectEndpoints({
         credentials: "include",
       }),
     }),
+
+    getPendingRequests: builder.query({
+      query: () => ({
+        url: `${AUTH_URL}/pending-requests`,
+        method: "GET",
+        credentials: "include",
+      }),
+    }),
+
+    approveUser: builder.mutation({
+      query: (id) => ({
+        url: `${AUTH_URL}/approve/${id}`,
+        method: "PUT",
+        credentials: "include",
+      }),
+    }),
+
+    rejectUser: builder.mutation({
+      query: (id) => ({
+        url: `${AUTH_URL}/reject/${id}`,
+        method: "PUT",
+        credentials: "include",
+      }),
+    }),
   }),
 });
 
@@ -73,4 +111,7 @@ export const {
   useChangePasswordMutation,
   useGetNotificationsQuery,
   useMarkNotiAsReadMutation,
+  useGetPendingRequestsQuery,
+  useApproveUserMutation,
+  useRejectUserMutation,
 } = userApiSlice;

@@ -1,122 +1,338 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useForm } from "react-hook-form";
-import { useDispatch, useSelector } from "react-redux";
+import { useSelector } from "react-redux";
 import { useNavigate, Link } from "react-router-dom";
 import { toast } from "sonner";
 import { Button, Loading, Textbox } from "../components";
 import { useRegisterMutation } from "../redux/slices/api/authApiSlice";
-import { setCredentials } from "../redux/slices/authSlice";
+
+const ROLES = ["Principal", "HOD", "Faculty", "Student"];
+const DEPARTMENTS = ["COMP", "IT", "ENTC", "MECH", "CIVIL", "OTHER"];
+const YEARS = ["FE", "SE", "TE", "BE"];
+const FACULTY_ROLES = ["Faculty", "Student Incharge", "Project Guide"];
 
 const Register = () => {
   const { user } = useSelector((state) => state.auth);
-  const { register, handleSubmit, watch, formState: { errors } } = useForm();
   const navigate = useNavigate();
-  const dispatch = useDispatch();
   const [registerUser, { isLoading }] = useRegisterMutation();
 
-  const handleRegister = async (data) => {
-    const { confirmPassword, isAdmin, ...registerData } = data;
+  const {
+    register,
+    handleSubmit,
+    watch,
+    setValue,
+    formState: { errors },
+  } = useForm({
+    defaultValues: {
+      role: "",
+      department: "",
+    },
+  });
+
+  const role = watch("role");
+  const department = watch("department");
+  const password = watch("password");
+
+  const showSection = role === "Student" && department === "COMP";
+
+  const roleHint = useMemo(() => {
+    if (!role) return "Select a role to continue.";
+    if (role === "Principal") return "Principal accounts are created with a secret key.";
+    return "Your account will be pending until approved.";
+  }, [role]);
+
+  const onSubmit = async (data) => {
+    const payload = { ...data };
+    delete payload.confirmPassword;
+
+    // Compact cleanup
+    if (!payload.email) delete payload.email;
+    if (!payload.section) delete payload.section;
+    if (!payload.subjectsSkills) delete payload.subjectsSkills;
+    if (!payload.facultyRole) delete payload.facultyRole;
+
     try {
-      const res = await registerUser({
-        ...registerData,
-        isAdmin: isAdmin || false,
-        title: registerData.title || "Team Member",
-        role: registerData.role || "Member",
-      }).unwrap();
-      const userData = res.user || res;
-      dispatch(setCredentials(userData));
-      toast.success("Account created successfully!");
-      if (userData.isAdmin) {
-        navigate("/admin-dashboard");
-      } else {
-        navigate("/employee-dashboard");
-      }
+      const res = await registerUser(payload).unwrap();
+      toast.success(res?.message || "Registered");
+      navigate("/log-in");
     } catch (err) {
       toast.error(err?.data?.message || err.error);
     }
   };
 
   useEffect(() => {
-    if (user) {
-      if (user.isAdmin) {
-        navigate("/admin-dashboard");
-      } else {
-        navigate("/employee-dashboard");
-      }
-    }
+    if (user) navigate("/");
   }, [user]);
+
+  // Reset role-specific fields when role changes
+  useEffect(() => {
+    setValue("prn", "");
+    setValue("department", "");
+    setValue("year", "");
+    setValue("section", "");
+    setValue("rollNo", "");
+    setValue("facultyRole", "");
+    setValue("subjectsSkills", "");
+    setValue("secretKey", "");
+  }, [role]);
 
   return (
     <div className='w-full min-h-screen flex items-center justify-center bg-[#f3f4f6]'>
-      <div className='w-full md:w-auto flex flex-col md:flex-row items-center justify-center gap-10 p-4'>
-        <div className='flex flex-col items-center gap-4'>
-          <span className='py-1 px-3 border rounded-full text-sm border-gray-300 text-gray-600'>
-            Manage all your task in one place!
-          </span>
-          <p className='flex flex-col text-4xl md:text-6xl font-black text-center text-blue-700'>
-            <span>Cloud-based</span>
-            <span>Task Manager</span>
-          </p>
+      <div className='w-full max-w-lg bg-white border border-gray-200 rounded-md shadow-sm px-4 py-3'>
+        <div className='flex items-start justify-between gap-3 mb-2'>
+          <div>
+            <p className='text-lg font-semibold text-gray-900'>Register</p>
+            <p className='text-xs text-gray-500'>{roleHint}</p>
+          </div>
+          <Link to='/log-in' className='text-xs text-blue-600 hover:underline'>
+            Back to login
+          </Link>
         </div>
 
-        <div className='form-container w-full md:w-[420px] bg-white px-10 py-8 shadow-lg rounded-lg'>
-          <p className='text-blue-600 text-3xl font-bold text-center mb-1'>Create Account</p>
-          <p className='text-center text-sm text-gray-500 mb-5'>Join your team on Taskify!</p>
+        <form onSubmit={handleSubmit(onSubmit)} className='flex flex-col gap-2'>
+          {/* Step 1 */}
+          <div className='grid grid-cols-2 gap-2'>
+            <div className='w-full flex flex-col gap-1'>
+              <span className='text-xs text-slate-900'>Role</span>
+              <select
+                className='border border-gray-300 rounded px-2 py-1.5 text-sm outline-none focus:ring-2 ring-blue-300'
+                {...register("role", { required: "Role is required!" })}
+              >
+                <option value=''>Select</option>
+                {ROLES.map((r) => (
+                  <option key={r} value={r}>
+                    {r}
+                  </option>
+                ))}
+              </select>
+              {errors.role && (
+                <span className='text-xs text-[#f64949fe]'>{errors.role.message}</span>
+              )}
+            </div>
 
-          <div className='flex items-center gap-3 p-3 bg-blue-50 rounded-lg border-2 border-blue-300 mb-5'>
-            <input
-              type='checkbox'
-              id='isAdmin'
-              {...register("isAdmin")}
-              className='w-5 h-5 cursor-pointer accent-blue-600'
-            />
-            <label htmlFor='isAdmin' className='text-sm font-bold text-blue-700 cursor-pointer'>
-              👑 Register as Admin
-            </label>
+            <div className='w-full flex flex-col gap-1'>
+              <span className='text-xs text-slate-900'>Department</span>
+              <select
+                className='border border-gray-300 rounded px-2 py-1.5 text-sm outline-none focus:ring-2 ring-blue-300'
+                {...register("department", {
+                  validate: (val) => {
+                    if (role === "Principal") return true;
+                    if (!role) return true;
+                    return val ? true : "Department is required!";
+                  },
+                })}
+                disabled={!role || role === "Principal"}
+              >
+                <option value=''>Select</option>
+                {DEPARTMENTS.map((d) => (
+                  <option key={d} value={d}>
+                    {d}
+                  </option>
+                ))}
+              </select>
+              {errors.department && (
+                <span className='text-xs text-[#f64949fe]'>
+                  {errors.department.message}
+                </span>
+              )}
+            </div>
           </div>
 
-          <form onSubmit={handleSubmit(handleRegister)} className='flex flex-col gap-y-4'>
-            <Textbox placeholder='Full Name' type='text' name='name' label='Full Name'
-              className='w-full rounded-full'
-              register={register("name", { required: "Full name is required!" })}
-              error={errors.name?.message || ""} />
+          <Textbox
+            placeholder='Full name'
+            type='text'
+            name='name'
+            label='Name'
+            labelClass='text-xs'
+            className='w-full rounded px-2 py-1.5 text-sm'
+            register={register("name", { required: "Name is required!" })}
+            error={errors.name?.message || ""}
+          />
 
-            <Textbox placeholder='you@example.com' type='email' name='email' label='Email Address'
-              className='w-full rounded-full'
-              register={register("email", { required: "Email is required!" })}
-              error={errors.email?.message || ""} />
+          {/* Role-based fields */}
+          {role === "Student" && (
+            <Textbox
+              placeholder='PRN'
+              type='text'
+              name='prn'
+              label='PRN'
+              labelClass='text-xs'
+              className='w-full rounded px-2 py-1.5 text-sm'
+              register={register("prn", { required: "PRN is required!" })}
+              error={errors.prn?.message || ""}
+            />
+          )}
 
-            <Textbox placeholder='e.g. Frontend Developer' type='text' name='title' label='Job Title'
-              className='w-full rounded-full'
-              register={register("title", { required: "Job title is required!" })}
-              error={errors.title?.message || ""} />
+          <Textbox
+            placeholder='Email (optional for Student)'
+            type='email'
+            name='email'
+            label='Email'
+            labelClass='text-xs'
+            className='w-full rounded px-2 py-1.5 text-sm'
+            register={register("email", {
+              validate: (val) => {
+                if (!val) return true;
+                return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val) || "Invalid email";
+              },
+            })}
+            error={errors.email?.message || ""}
+          />
 
-            <Textbox placeholder='e.g. Developer, Designer' type='text' name='role' label='Role'
-              className='w-full rounded-full'
-              register={register("role", { required: "Role is required!" })}
-              error={errors.role?.message || ""} />
+          {role === "Principal" && (
+            <Textbox
+              placeholder='Secret key'
+              type='password'
+              name='secretKey'
+              label='Secret Key'
+              labelClass='text-xs'
+              className='w-full rounded px-2 py-1.5 text-sm'
+              register={register("secretKey", {
+                required: "Secret key is required!",
+              })}
+              error={errors.secretKey?.message || ""}
+            />
+          )}
 
-            <Textbox placeholder='Create a password' type='password' name='password' label='Password'
-              className='w-full rounded-full'
-              register={register("password", { required: "Password is required!", minLength: { value: 6, message: "Min 6 characters" } })}
-              error={errors.password?.message || ""} />
+          {(role === "Faculty" || role === "Student") && (
+            <div className='grid grid-cols-2 gap-2'>
+              <div className='w-full flex flex-col gap-1'>
+                <span className='text-xs text-slate-900'>Year</span>
+                <select
+                  className='border border-gray-300 rounded px-2 py-1.5 text-sm outline-none focus:ring-2 ring-blue-300'
+                  {...register("year", { required: "Year is required!" })}
+                >
+                  <option value=''>Select</option>
+                  {YEARS.map((y) => (
+                    <option key={y} value={y}>
+                      {y}
+                    </option>
+                  ))}
+                </select>
+                {errors.year && (
+                  <span className='text-xs text-[#f64949fe]'>{errors.year.message}</span>
+                )}
+              </div>
 
-            <Textbox placeholder='Confirm your password' type='password' name='confirmPassword' label='Confirm Password'
-              className='w-full rounded-full'
-              register={register("confirmPassword", { required: "Please confirm!", validate: (val) => val === watch("password") || "Passwords do not match!" })}
-              error={errors.confirmPassword?.message || ""} />
+              {showSection ? (
+                <Textbox
+                  placeholder='Section'
+                  type='text'
+                  name='section'
+                  label='Section'
+                  labelClass='text-xs'
+                  className='w-full rounded px-2 py-1.5 text-sm'
+                  register={register("section", { required: "Section is required!" })}
+                  error={errors.section?.message || ""}
+                />
+              ) : (
+                <div className='w-full flex flex-col gap-1'>
+                  <span className='text-xs text-slate-900'>Section</span>
+                  <input
+                    className='border border-gray-200 rounded px-2 py-1.5 text-sm bg-gray-50'
+                    value={showSection ? department : "N/A"}
+                    disabled
+                  />
+                </div>
+              )}
+            </div>
+          )}
 
-            {isLoading ? <Loading /> : (
-              <Button type='submit' label='Create Account'
-                className='w-full h-10 bg-blue-700 text-white rounded-full mt-2' />
-            )}
+          {role === "Faculty" && (
+            <>
+              <Textbox
+                placeholder='Subjects / Skills (comma separated)'
+                type='text'
+                name='subjectsSkills'
+                label='Subjects / Skills'
+                labelClass='text-xs'
+                className='w-full rounded px-2 py-1.5 text-sm'
+                register={register("subjectsSkills", {
+                  required: "Subjects / Skills is required!",
+                })}
+                error={errors.subjectsSkills?.message || ""}
+              />
 
-            <p className='text-center text-sm text-gray-600'>
-              Already have an account?{" "}
-              <Link to='/log-in' className='text-blue-600 hover:underline font-medium'>Log in</Link>
-            </p>
-          </form>
-        </div>
+              <div className='w-full flex flex-col gap-1'>
+                <span className='text-xs text-slate-900'>Faculty Role</span>
+                <select
+                  className='border border-gray-300 rounded px-2 py-1.5 text-sm outline-none focus:ring-2 ring-blue-300'
+                  {...register("facultyRole", { required: "Faculty role is required!" })}
+                >
+                  <option value=''>Select</option>
+                  {FACULTY_ROLES.map((r) => (
+                    <option key={r} value={r}>
+                      {r}
+                    </option>
+                  ))}
+                </select>
+                {errors.facultyRole && (
+                  <span className='text-xs text-[#f64949fe]'>
+                    {errors.facultyRole.message}
+                  </span>
+                )}
+              </div>
+            </>
+          )}
+
+          {role === "Student" && (
+            <Textbox
+              placeholder='Roll No'
+              type='text'
+              name='rollNo'
+              label='Roll No'
+              labelClass='text-xs'
+              className='w-full rounded px-2 py-1.5 text-sm'
+              register={register("rollNo", { required: "Roll No is required!" })}
+              error={errors.rollNo?.message || ""}
+            />
+          )}
+
+          <Textbox
+            placeholder='Create a password'
+            type='password'
+            name='password'
+            label='Password'
+            labelClass='text-xs'
+            className='w-full rounded px-2 py-1.5 text-sm'
+            register={register("password", {
+              required: "Password is required!",
+              minLength: { value: 6, message: "Min 6 characters" },
+            })}
+            error={errors.password?.message || ""}
+          />
+
+          <Textbox
+            placeholder='Confirm password'
+            type='password'
+            name='confirmPassword'
+            label='Confirm Password'
+            labelClass='text-xs'
+            className='w-full rounded px-2 py-1.5 text-sm'
+            register={register("confirmPassword", {
+              required: "Please confirm!",
+              validate: (val) => val === password || "Passwords do not match!",
+            })}
+            error={errors.confirmPassword?.message || ""}
+          />
+
+          {isLoading ? (
+            <Loading />
+          ) : (
+            <Button
+              type='submit'
+              label='Submit request'
+              className='w-full h-9 bg-blue-700 text-white rounded mt-1'
+            />
+          )}
+
+          <p className='text-center text-xs text-gray-600'>
+            Already have an account?{" "}
+            <Link to='/log-in' className='text-blue-600 hover:underline font-medium'>
+              Log in
+            </Link>
+          </p>
+        </form>
       </div>
     </div>
   );

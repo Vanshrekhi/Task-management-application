@@ -83,3 +83,19 @@ export function renderEscalationEmail({ taskTitle, dueDate, teamNames }) {
   return { subject, text };
 }
 
+export function renderTaskCompletedEmail({ assignerName, taskTitle, completedByName }) {
+  const subject = `Task completed: ${taskTitle}`;
+  const text = `Hi ${assignerName || "there"},\n\nThe task "${taskTitle}" was marked completed${
+    completedByName ? ` by ${completedByName}` : ""
+  }.\n\n— Taskify\n`;
+  return { subject, text };
+}
+
+/** Overdue task — notify HOD (department escalation). */
+export function renderHodOverdueEmail({ hodName, taskTitle, dueDate, assigneeSummary }) {
+  const due = dueDate ? new Date(dueDate).toDateString() : "N/A";
+  const subject = `Overdue task in your department: ${taskTitle}`;
+  const text = `Hi ${hodName || "HOD"},\n\nA task in your department is overdue.\n\nTitle: ${taskTitle}\nDue: ${due}\nAssignees: ${assigneeSummary}\n\nPlease follow up in Taskify.\n`;
+  return { subject, text };
+}
+

@@ -11,6 +11,7 @@ import {
   BGS,
   PRIOTITYSTYELS,
   TASK_TYPE,
+  canManageTasks,
   formatDate,
 } from "../../utils/index.js";
 import UserInfo from "../UserInfo.jsx";
@@ -24,6 +25,7 @@ const ICONS = {
 
 const TaskCard = ({ task }) => {
   const { user } = useSelector((state) => state.auth);
+  const manage = canManageTasks(user);
   const [open, setOpen] = useState(false);
 
   return (
@@ -104,7 +106,7 @@ const TaskCard = ({ task }) => {
 
         <div className='w-full pb-2'>
           <button
-            disabled={user.isAdmin ? false : true}
+            disabled={!manage}
             onClick={() => setOpen(true)}
             className='w-full flex gap-4 items-center text-sm text-gray-500 font-semibold disabled:cursor-not-allowed disabled:text-gray-300'
           >

@@ -1,8 +1,48 @@
 import { Queue, Worker } from "bullmq";
 import IORedis from "ioredis";
 import { processAssignmentEmailJob, processReminderScanJob } from "../jobs/taskReminder.js";
+import { lookup } from "node:dns/promises";
 
 const queueName = "taskify-reminders";
+
+let _redisStatus = {
+  checked: false,
+  enabled: true,
+  reason: "",
+};
+
+async function canUseRedis() {
+  if (_redisStatus.checked) return _redisStatus.enabled;
+
+  const url = process.env.REDIS_URL;
+  if (!url) {
+    _redisStatus = {
+      checked: true,
+      enabled: false,
+      reason: "REDIS_URL is not set",
+    };
+    return false;
+  }
+
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname;
+    if (!host) throw new Error("Missing hostname");
+    await lookup(host);
+    _redisStatus = { checked: true, enabled: true, reason: "" };
+    return true;
+  } catch (err) {
+    _redisStatus = {
+      checked: true,
+      enabled: false,
+      reason: err?.message || String(err),
+    };
+    console.warn(
+      `[reminderQueue] Redis disabled (${process.env.REDIS_URL}): ${_redisStatus.reason}`
+    );
+    return false;
+  }
+}
 
 function getRedisConnection() {
   const url = process.env.REDIS_URL;
@@ -34,7 +74,10 @@ function getReminderQueue() {
   return _reminderQueue;
 }
 
-export function startReminderWorker() {
+export async function startReminderWorker() {
+  const ok = await canUseRedis();
+  if (!ok) return null;
+
   const worker = new Worker(
     queueName,
     async (job) => {
@@ -64,6 +107,9 @@ export function startReminderWorker() {
 export async function enqueueAssignmentEmail({ taskId, triggeredByUserId }) {
   if (!taskId) throw new Error("enqueueAssignmentEmail requires taskId");
 
+  const ok = await canUseRedis();
+  if (!ok) return null;
+
   return getReminderQueue().add(
     "send-assignment-email",
     { taskId, triggeredByUserId },
@@ -72,6 +118,9 @@ export async function enqueueAssignmentEmail({ taskId, triggeredByUserId }) {
 }
 
 export async function enqueueReminderScan() {
+  const ok = await canUseRedis();
+  if (!ok) return null;
+
   return getReminderQueue().add("scan-reminders", {}, { jobId: `scan:${Date.now()}` });
 }
 

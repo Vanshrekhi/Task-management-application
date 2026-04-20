@@ -41,6 +41,7 @@ const taskSchema = new Schema(
       },
     ],
     assets: [String],
+    createdBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
     team: [{ type: Schema.Types.ObjectId, ref: "User" }],
     reminderMeta: {
       lastReminderSentAt: { type: Date, default: null },

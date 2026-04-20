@@ -12,27 +12,27 @@ import {
   updateTask,
   updateTaskStage,
 } from "../controllers/taskController.js";
-import { isAdminRoute, protectRoute } from "../middleware/authMiddleware.js";
+import { canManageTasks, protectRoute } from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 
-router.post("/create", protectRoute, isAdminRoute, createTask);
-router.post("/duplicate/:id", protectRoute, isAdminRoute, duplicateTask);
+router.post("/create", protectRoute, canManageTasks, createTask);
+router.post("/duplicate/:id", protectRoute, canManageTasks, duplicateTask);
 router.post("/activity/:id", protectRoute, postTaskActivity);
 
 router.get("/dashboard", protectRoute, dashboardStatistics);
 router.get("/", protectRoute, getTasks);
 router.get("/:id", protectRoute, getTask);
 
-router.put("/create-subtask/:id", protectRoute, isAdminRoute, createSubTask);
-router.put("/update/:id", protectRoute, isAdminRoute, updateTask);
+router.put("/create-subtask/:id", protectRoute, canManageTasks, createSubTask);
+router.put("/update/:id", protectRoute, canManageTasks, updateTask);
 router.put("/change-stage/:id", protectRoute, updateTaskStage);
-router.put("/:id", protectRoute, isAdminRoute, trashTask);
+router.put("/:id", protectRoute, canManageTasks, trashTask);
 
 router.delete(
   "/delete-restore/:id?",
   protectRoute,
-  isAdminRoute,
+  canManageTasks,
   deleteRestoreTask
 );
 

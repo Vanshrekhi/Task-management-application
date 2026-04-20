@@ -6,7 +6,7 @@ import {
   renderReminderEmail,
   sendEmail,
 } from "../services/emailService.js";
-import { notifyAdminsOverdue } from "./escalation.js";
+import { notifyHodsOverdue } from "./escalation.js";
 
 function hoursBetween(a, b) {
   return (b.getTime() - a.getTime()) / (1000 * 60 * 60);
@@ -99,7 +99,7 @@ export async function processReminderScanJob() {
     if (hoursLeft <= 0) {
       const alreadyEscalated = Boolean(task.reminderMeta?.lastEscalationSentAt);
       if (!alreadyEscalated) {
-        await notifyAdminsOverdue({ task });
+        await notifyHodsOverdue({ task });
         task.reminderMeta = task.reminderMeta || {};
         task.reminderMeta.lastEscalationSentAt = now;
         await task.save();

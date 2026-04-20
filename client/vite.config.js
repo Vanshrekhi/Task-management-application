@@ -12,6 +12,11 @@ export default defineConfig({
         target: "http://localhost:5000", // server/index.js port 5000 pe chalta hai
         changeOrigin: true,
       },
+      "/socket.io": {
+        target: "http://localhost:5000",
+        ws: true,
+        changeOrigin: true,
+      },
     },
   },
 });

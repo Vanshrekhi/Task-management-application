@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { io } from "socket.io-client";
 import { useSelector } from "react-redux";
 import { toast } from "sonner";
@@ -9,7 +9,8 @@ import {
 } from "../redux/slices/api/chatApiSlice";
 import { useGetTeamListsQuery } from "../redux/slices/api/userApiSlice";
 
-const socket = io("http://localhost:5000", {
+/** Same host as the Vite dev server (proxy forwards /socket.io to the API). Production: set VITE_SOCKET_URL to your API origin. */
+const socket = io(import.meta.env.VITE_SOCKET_URL || undefined, {
   withCredentials: true,
   autoConnect: false,
 });
@@ -22,8 +23,9 @@ const ChatRoom = () => {
   const [messages, setMessages] = useState([]);
   const [pendingJoinRequests, setPendingJoinRequests] = useState([]);
   const [selectedInvitees, setSelectedInvitees] = useState([]);
+  const activeKeyRef = useRef("");
 
-  const { data: teamData = [] } = useGetTeamListsQuery({ search: "" });
+  const { data: teamData = [] } = useGetTeamListsQuery({ search: "", scope: "chat" });
   const { data: roomData, refetch } = useGetMyChatRoomsQuery();
   const [createChatRoom, { isLoading: isCreating }] = useCreateChatRoomMutation();
   const [endChatSession, { isLoading: isEnding }] = useEndChatSessionMutation();
@@ -34,61 +36,76 @@ const ChatRoom = () => {
   );
 
   useEffect(() => {
+    activeKeyRef.current = activeKey;
+  }, [activeKey]);
+
+  useEffect(() => {
     if (!socket.connected) {
       socket.connect();
     }
 
-    socket.on("chat:join-request", (payload) => {
+    const onJoinRequest = (payload) => {
       setPendingJoinRequests((prev) => [...prev, payload]);
       toast.info(`${payload.memberName} requested to join room ${payload.key}`);
-    });
+    };
 
-    socket.on("chat:join-response", ({ key, approved }) => {
+    const onJoinResponse = ({ key, approved }) => {
       if (approved) {
+        activeKeyRef.current = key;
         setActiveKey(key);
         socket.emit("chat:join-room", { key });
         toast.success(`Join accepted for ${key}`);
       } else {
         toast.error(`Join request rejected for ${key}`);
       }
-    });
+    };
 
-    socket.on("chat:history", ({ key, messages: roomMessages }) => {
-      if (key === activeKey || !activeKey) {
+    const onHistory = ({ key, messages: roomMessages }) => {
+      if (key === activeKeyRef.current) {
         setMessages(roomMessages || []);
       }
-    });
+    };
 
-    socket.on("chat:new-message", ({ key, message }) => {
-      if (key === activeKey) {
+    const onNewMessage = ({ key, message }) => {
+      if (key === activeKeyRef.current) {
         setMessages((prev) => [...prev, message]);
       }
-    });
+    };
 
-    socket.on("chat:session-ended", ({ key }) => {
-      if (key === activeKey) {
+    const onSessionEnded = ({ key }) => {
+      if (key === activeKeyRef.current) {
         setMessages([]);
         setActiveKey("");
+        activeKeyRef.current = "";
       }
       refetch();
       toast.info(`Chat session ${key} ended. Messages were cleared.`);
-    });
+    };
 
-    socket.on("chat:join-pending", ({ key }) => {
+    const onJoinPending = ({ key }) => {
       toast.info(`Join request sent for ${key}`);
-    });
-    socket.on("chat:error", (message) => toast.error(message));
+    };
+
+    const onError = (message) => toast.error(message);
+
+    socket.on("chat:join-request", onJoinRequest);
+    socket.on("chat:join-response", onJoinResponse);
+    socket.on("chat:history", onHistory);
+    socket.on("chat:new-message", onNewMessage);
+    socket.on("chat:session-ended", onSessionEnded);
+    socket.on("chat:join-pending", onJoinPending);
+    socket.on("chat:error", onError);
 
     return () => {
-      socket.off("chat:join-request");
-      socket.off("chat:join-response");
-      socket.off("chat:history");
-      socket.off("chat:new-message");
-      socket.off("chat:session-ended");
-      socket.off("chat:join-pending");
-      socket.off("chat:error");
+      socket.off("chat:join-request", onJoinRequest);
+      socket.off("chat:join-response", onJoinResponse);
+      socket.off("chat:history", onHistory);
+      socket.off("chat:new-message", onNewMessage);
+      socket.off("chat:session-ended", onSessionEnded);
+      socket.off("chat:join-pending", onJoinPending);
+      socket.off("chat:error", onError);
     };
-  }, [activeKey, refetch]);
+  }, [refetch]);
 
   const handleCreateRoom = async () => {
     try {
@@ -96,6 +113,7 @@ const ChatRoom = () => {
         invitedMembers: selectedInvitees,
       }).unwrap();
       const key = response?.room?.key;
+      activeKeyRef.current = key;
       setActiveKey(key);
       setRoomKeyInput(key);
       socket.emit("chat:join-room", { key });

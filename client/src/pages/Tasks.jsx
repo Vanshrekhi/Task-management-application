@@ -6,7 +6,7 @@ import { useParams, useSearchParams } from "react-router-dom";
 import { Button, Loading, Table, Tabs, Title } from "../components";
 import { AddTask, BoardView, TaskTitle } from "../components/tasks";
 import { useGetAllTaskQuery } from "../redux/slices/api/taskApiSlice";
-import { TASK_TYPE } from "../utils";
+import { TASK_TYPE, canManageTasks } from "../utils";
 import { useSelector } from "react-redux";
 
 const TABS = [
@@ -45,7 +45,7 @@ const Tasks = () => {
       <div className='flex items-center justify-between mb-4'>
         <Title title={status ? `${status} Tasks` : "Tasks"} />
 
-        {!status && user?.isAdmin && (
+        {!status && canManageTasks(user) && (
           <Button
             label='Create Task'
             icon={<IoMdAdd className='text-lg' />}

@@ -2,12 +2,89 @@ import asyncHandler from "express-async-handler";
 import Notice from "../models/notis.js";
 import Task from "../models/taskModel.js";
 import User from "../models/userModel.js";
+import { processAssignmentEmailJob } from "../jobs/taskReminder.js";
 import { enqueueAssignmentEmail } from "../queues/reminderQueue.js";
+import {
+  assertAssignableTeam,
+  normalizeDept,
+  normalizeRole,
+} from "../utils/roleHierarchy.js";
+import {
+  isEmailConfigured,
+  renderTaskCompletedEmail,
+  sendEmail,
+} from "../services/emailService.js";
+
+async function maybeNotifyTaskCompleted(taskDoc, completedByUserId) {
+  if (taskDoc.stage !== "completed") return;
+  if (!taskDoc.createdBy) return;
+  if (String(taskDoc.createdBy) === String(completedByUserId)) return;
+  if (!isEmailConfigured()) return;
+
+  const creator = await User.findById(taskDoc.createdBy).select("email name");
+  if (!creator?.email) return;
+
+  const completer = await User.findById(completedByUserId).select("name");
+  const { subject, text } = renderTaskCompletedEmail({
+    assignerName: creator.name,
+    taskTitle: taskDoc.title,
+    completedByName: completer?.name,
+  });
+  try {
+    await sendEmail({ to: creator.email, subject, text });
+  } catch (e) {
+    console.error("[email] task completed notify failed", e?.message || e);
+  }
+}
+
+async function safeEnqueueAssignmentEmail({ taskId, userId }) {
+  try {
+    await enqueueAssignmentEmail({ taskId, triggeredByUserId: userId });
+  } catch (err) {
+    console.error("[task] enqueueAssignmentEmail failed, sending inline", err?.message || err);
+    try {
+      await processAssignmentEmailJob({ data: { taskId } });
+    } catch (e2) {
+      console.error("[task] inline assignment email failed", e2?.message || e2);
+    }
+  }
+}
+
+async function validateAssigneesForCreator(creatorId, teamIds = []) {
+  if (!teamIds?.length) return { ok: true };
+  const creator = await User.findById(creatorId).select("name role isAdmin");
+  if (!creator) {
+    return { ok: false, status: 403, message: "Creator not found." };
+  }
+  const assignees = await User.find({ _id: { $in: teamIds } }).select(
+    "name role isAdmin status isActive"
+  );
+  if (assignees.length !== teamIds.length) {
+    return { ok: false, status: 400, message: "One or more assignees were not found." };
+  }
+  for (const a of assignees) {
+    if (!a.isActive || a.status !== "approved") {
+      return {
+        ok: false,
+        status: 400,
+        message: `Cannot assign to ${a.name || "user"}: account is inactive or not approved.`,
+      };
+    }
+  }
+  const v = assertAssignableTeam(creator, assignees);
+  if (!v.ok) return { ok: false, status: 400, message: v.message };
+  return { ok: true };
+}
 
 const createTask = asyncHandler(async (req, res) => {
   try {
     const { userId } = req.user;
     const { title, team, stage, date, priority, assets } = req.body;
+
+    const assignCheck = await validateAssigneesForCreator(userId, team);
+    if (!assignCheck.ok) {
+      return res.status(assignCheck.status).json({ status: false, message: assignCheck.message });
+    }
 
     //alert users of the task
     let text = "New task has been assigned to you";
@@ -35,6 +112,7 @@ const createTask = asyncHandler(async (req, res) => {
       priority: priority.toLowerCase(),
       assets,
       activities: activity,
+      createdBy: userId,
     });
 
     await Notice.create({
@@ -43,10 +121,7 @@ const createTask = asyncHandler(async (req, res) => {
       task: task._id,
     });
 
-    // Async email notification (instant on assign)
-    enqueueAssignmentEmail({ taskId: task._id, triggeredByUserId: userId }).catch(
-      (err) => console.error("[createTask] enqueueAssignmentEmail failed", err)
-    );
+    await safeEnqueueAssignmentEmail({ taskId: task._id, userId });
 
     res
       .status(200)
@@ -63,11 +138,19 @@ const duplicateTask = asyncHandler(async (req, res) => {
     const { userId } = req.user;
 
     const task = await Task.findById(id);
+    if (!task) {
+      return res.status(404).json({ status: false, message: "Task not found." });
+    }
+
+    const assignCheck = await validateAssigneesForCreator(userId, task.team || []);
+    if (!assignCheck.ok) {
+      return res.status(assignCheck.status).json({ status: false, message: assignCheck.message });
+    }
 
     //alert users of the task
     let text = "New task has been assigned to you";
-    if (team.team?.length > 1) {
-      text = text + ` and ${task.team?.length - 1} others.`;
+    if (task.team?.length > 1) {
+      text = text + ` and ${task.team.length - 1} others.`;
     }
 
     text =
@@ -85,24 +168,26 @@ const duplicateTask = asyncHandler(async (req, res) => {
     };
 
     const newTask = await Task.create({
-      ...task,
       title: "Duplicate - " + task.title,
+      team: task.team,
+      subTasks: task.subTasks || [],
+      assets: task.assets || [],
+      priority: task.priority,
+      stage: task.stage,
+      date: task.date,
+      activities: activity,
+      createdBy: userId,
+      reminderMeta: task.reminderMeta || {},
+      isTrashed: false,
     });
-
-    newTask.team = task.team;
-    newTask.subTasks = task.subTasks;
-    newTask.assets = task.assets;
-    newTask.priority = task.priority;
-    newTask.stage = task.stage;
-    newTask.activities = activity;
-
-    await newTask.save();
 
     await Notice.create({
       team: newTask.team,
       text,
       task: newTask._id,
     });
+
+    await safeEnqueueAssignmentEmail({ taskId: newTask._id, userId });
 
     res
       .status(200)
@@ -114,20 +199,26 @@ const duplicateTask = asyncHandler(async (req, res) => {
 
 const updateTask = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const { isAdmin } = req.user;
+  const { userId } = req.user;
   const { title, date, team, stage, priority, assets } = req.body;
 
   try {
-    if (!isAdmin) {
-      return res
-        .status(403)
-        .json({ status: false, message: "Only admins can edit task details." });
-    }
-
     const task = await Task.findById(id);
+    if (!task) {
+      return res.status(404).json({ status: false, message: "Task not found." });
+    }
 
     const prevTeam = (task.team || []).map(String).sort().join(",");
     const nextTeam = (team || []).map(String).sort().join(",");
+
+    if (prevTeam !== nextTeam) {
+      const assignCheck = await validateAssigneesForCreator(userId, team);
+      if (!assignCheck.ok) {
+        return res.status(assignCheck.status).json({ status: false, message: assignCheck.message });
+      }
+    }
+
+    const prevStage = String(task.stage || "").toLowerCase();
 
     task.title = title;
     task.date = date;
@@ -135,19 +226,21 @@ const updateTask = asyncHandler(async (req, res) => {
     task.assets = assets;
     task.stage = stage.toLowerCase();
     task.team = team;
+    if (!task.createdBy) {
+      task.createdBy = userId;
+    }
 
     await task.save();
 
-    // If team changed, treat as (re)assignment and send email
     if (prevTeam !== nextTeam) {
-      enqueueAssignmentEmail({ taskId: task._id, triggeredByUserId: req.user?.userId }).catch(
-        (err) => console.error("[updateTask] enqueueAssignmentEmail failed", err)
-      );
+      await safeEnqueueAssignmentEmail({ taskId: task._id, userId });
     }
 
-    res
-      .status(200)
-      .json({ status: true, message: "Task duplicated successfully." });
+    if (prevStage !== "completed" && task.stage === "completed") {
+      await maybeNotifyTaskCompleted(task, userId);
+    }
+
+    res.status(200).json({ status: true, message: "Task updated successfully." });
   } catch (error) {
     return res.status(400).json({ status: false, message: error.message });
   }
@@ -156,13 +249,22 @@ const updateTask = asyncHandler(async (req, res) => {
 const updateTaskStage = asyncHandler(async (req, res) => {
   try {
     const { id } = req.params;
+    const { userId } = req.user;
     const { stage } = req.body;
 
     const task = await Task.findById(id);
+    if (!task) {
+      return res.status(404).json({ status: false, message: "Task not found." });
+    }
 
+    const prevStage = String(task.stage || "").toLowerCase();
     task.stage = stage.toLowerCase();
 
     await task.save();
+
+    if (prevStage !== "completed" && task.stage === "completed") {
+      await maybeNotifyTaskCompleted(task, userId);
+    }
 
     res
       .status(200)
@@ -198,14 +300,34 @@ const createSubTask = asyncHandler(async (req, res) => {
 });
 
 const getTasks = asyncHandler(async (req, res) => {
-  const { userId, isAdmin } = req.user;
+  const { userId, isAdmin, role, department } = req.user;
   const { stage, isTrashed, search } = req.query;
+
+  const r = normalizeRole(role);
+  const isPrincipal = isAdmin || r === "Principal";
 
   let query = { isTrashed: isTrashed ? true : false };
 
-  if (!isAdmin) {
-    query.team = { $all: [userId] };
+  if (!isPrincipal) {
+    if (r === "HOD") {
+      const dept = normalizeDept(department);
+      const deptUserIds = await User.find({
+        department: dept,
+        status: "approved",
+      }).distinct("_id");
+      query.$or = [
+        { team: userId },
+        { createdBy: userId },
+        { team: { $in: deptUserIds } },
+        { createdBy: { $in: deptUserIds } },
+      ];
+    } else if (r === "Faculty") {
+      query.$or = [{ team: userId }, { createdBy: userId }];
+    } else {
+      query.team = userId;
+    }
   }
+
   if (stage) {
     query.stage = stage;
   }
@@ -218,17 +340,16 @@ const getTasks = asyncHandler(async (req, res) => {
         { priority: { $regex: search, $options: "i" } },
       ],
     };
-    query = { ...query, ...searchQuery };
+    query = { $and: [query, searchQuery] };
   }
 
-  let queryResult = Task.find(query)
+  const tasks = await Task.find(query)
     .populate({
       path: "team",
-      select: "name title email",
+      select: "name title email role department",
     })
+    .populate({ path: "createdBy", select: "name email" })
     .sort({ _id: -1 });
-
-  const tasks = await queryResult;
 
   res.status(200).json({
     status: true,
@@ -243,13 +364,13 @@ const getTask = asyncHandler(async (req, res) => {
     const task = await Task.findById(id)
       .populate({
         path: "team",
-        select: "name title role email",
+        select: "name title role email department",
       })
+      .populate({ path: "createdBy", select: "name email" })
       .populate({
         path: "activities.by",
         select: "name",
-      })
-      .sort({ _id: -1 });
+      });
 
     res.status(200).json({
       status: true,
@@ -338,30 +459,52 @@ const deleteRestoreTask = asyncHandler(async (req, res) => {
 
 const dashboardStatistics = asyncHandler(async (req, res) => {
   try {
-    const { userId, isAdmin } = req.user;
+    const { userId, isAdmin, role, department } = req.user;
+    const r = normalizeRole(role);
+    const isPrincipal = isAdmin || r === "Principal";
 
-    // Fetch all tasks from the database
-    const allTasks = isAdmin
-      ? await Task.find({
-          isTrashed: false,
-        })
-          .populate({
-            path: "team",
-            select: "name role title email",
-          })
-          .sort({ _id: -1 })
-      : await Task.find({
-          isTrashed: false,
-          team: { $all: [userId] },
-        })
-          .populate({
-            path: "team",
-            select: "name role title email",
-          })
-          .sort({ _id: -1 });
+    let taskQuery = { isTrashed: false };
+    if (!isPrincipal) {
+      if (r === "HOD") {
+        const dept = normalizeDept(department);
+        const deptUserIds = await User.find({
+          department: dept,
+          status: "approved",
+        }).distinct("_id");
+        taskQuery.$or = [
+          { team: userId },
+          { createdBy: userId },
+          { team: { $in: deptUserIds } },
+          { createdBy: { $in: deptUserIds } },
+        ];
+      } else if (r === "Faculty") {
+        taskQuery.$or = [{ team: userId }, { createdBy: userId }];
+      } else {
+        taskQuery.team = userId;
+      }
+    }
 
-    const users = await User.find({ isActive: true })
-      .select("name title role isActive createdAt")
+    const allTasks = await Task.find(taskQuery)
+      .populate({
+        path: "team",
+        select: "name role title email department",
+      })
+      .sort({ _id: -1 });
+
+    let usersQuery = { isActive: true, status: "approved" };
+    if (isPrincipal) {
+      // recent org members
+    } else if (r === "HOD") {
+      usersQuery.department = normalizeDept(department);
+    } else if (r === "Faculty") {
+      usersQuery.department = normalizeDept(department);
+      usersQuery.role = "Student";
+    } else {
+      usersQuery = { _id: userId };
+    }
+
+    const users = await User.find(usersQuery)
+      .select("name title role isActive createdAt department")
       .limit(10)
       .sort({ _id: -1 });
 
@@ -394,7 +537,7 @@ const dashboardStatistics = asyncHandler(async (req, res) => {
     const summary = {
       totalTasks,
       last10Task,
-      users: isAdmin ? users : [],
+      users: isPrincipal ? users : r === "HOD" || r === "Faculty" ? users : [],
       tasks: groupedTasks,
       graphData,
     };

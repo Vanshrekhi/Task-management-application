@@ -66,3 +66,15 @@ export const BGS = [
   "bg-red-600",
   "bg-green-600",
 ];
+
+export const DEPARTMENTS = ["COMP", "IT", "ENTC", "MECH", "CIVIL", "OTHER"];
+
+export const YEARS = ["FE", "SE", "TE", "BE"];
+
+/** Principal (admin), HOD, or Faculty — not Student */
+export function canManageTasks(user) {
+  if (!user) return false;
+  const r = user.role ? String(user.role).trim() : "";
+  if (user.isAdmin || r === "Principal") return true;
+  return r === "HOD" || r === "Faculty";
+}

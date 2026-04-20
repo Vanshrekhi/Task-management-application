@@ -10,8 +10,11 @@ import {
   Dashboard,
   AdminDashboard,
   EmployeeDashboard,
+  FacultyDashboard,
+  HodDashboard,
   ChatRoom,
   Login,
+  StudentDashboard,
   TaskDetail,
   Tasks,
   Trash,
@@ -51,8 +54,23 @@ function Layout() {
 
 const RootRedirect = () => {
   const { user } = useSelector((state) => state.auth);
+  const role = user?.role;
+  const isAdmin = user?.isAdmin || role === "Principal";
   return user ? (
-    <Navigate to={user.isAdmin ? '/admin-dashboard' : '/employee-dashboard'} replace />
+    <Navigate
+      to={
+        isAdmin
+          ? "/admin-dashboard"
+          : role === "HOD"
+            ? "/hod-dashboard"
+            : role === "Faculty"
+              ? "/faculty-dashboard"
+              : role === "Student"
+                ? "/student-dashboard"
+                : "/employee-dashboard"
+      }
+      replace
+    />
   ) : (
     <Navigate to='/log-in' replace />
   );
@@ -118,6 +136,9 @@ const App = () => {
             <Route index path='/' element={<RootRedirect />} />
             <Route path='/dashboard' element={<Dashboard />} />
             <Route path='/admin-dashboard' element={<AdminDashboard />} />
+            <Route path='/hod-dashboard' element={<HodDashboard />} />
+            <Route path='/faculty-dashboard' element={<FacultyDashboard />} />
+            <Route path='/student-dashboard' element={<StudentDashboard />} />
             <Route path='/employee-dashboard' element={<EmployeeDashboard />} />
             <Route path='/tasks' element={<Tasks />} />
             <Route path='/completed/:status?' element={<Tasks />} />

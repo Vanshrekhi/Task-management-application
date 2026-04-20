@@ -19,6 +19,7 @@ import AddSubTask from "./AddSubTask";
 import AddTask from "./AddTask";
 import TaskColor from "./TaskColor";
 import { useSelector } from "react-redux";
+import { canManageTasks } from "../../utils";
 
 const CustomTransition = ({ children }) => (
   <Transition
@@ -119,6 +120,7 @@ const ChangeTaskActions = ({ _id, stage }) => {
 
 export default function TaskDialog({ task }) {
   const { user } = useSelector((state) => state.auth);
+  const manage = canManageTasks(user);
   const [open, setOpen] = useState(false);
   const [openEdit, setOpenEdit] = useState(false);
   const [openDialog, setOpenDialog] = useState(false);
@@ -184,7 +186,7 @@ export default function TaskDialog({ task }) {
       onClick: () => duplicateHanlder(),
     },
   ];
-  if (user.isAdmin) {
+  if (manage) {
     items.splice(1, 0, {
       label: "Edit",
       icon: <MdOutlineEdit className='mr-2 h-5 w-5' aria-hidden='true' />,
@@ -207,7 +209,7 @@ export default function TaskDialog({ task }) {
                   <Menu.Item key={el.label}>
                     {({ active }) => (
                       <button
-                        disabled={index === 0 ? false : !user.isAdmin}
+                        disabled={index === 0 ? false : !manage}
                         onClick={el?.onClick}
                         className={`${
                           active ? "bg-blue-500 text-white" : "text-gray-900"
@@ -231,7 +233,7 @@ export default function TaskDialog({ task }) {
                 <Menu.Item>
                   {({ active }) => (
                     <button
-                      disabled={!user.isAdmin}
+                      disabled={!manage}
                       onClick={() => deleteClicks()}
                       className={`${
                         active ? "bg-red-100 text-red-900" : "text-red-900"

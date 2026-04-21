@@ -248,6 +248,31 @@ const registerUser = asyncHandler(async (req, res) => {
     return res.status(400).json({ status: false, message: "Invalid user data" });
   }
 
+  if (status === "pending") {
+    let approvers = [];
+    if (requestedRole === "Faculty" || requestedRole === "Student") {
+      approvers = await User.find({ role: "HOD", department: requestedDept, isActive: true, status: "approved" });
+      if (approvers.length === 0) {
+        // Fallback to Principal if no HOD found for the department
+        approvers = await User.find({ $or: [{ role: "Principal" }, { isAdmin: true }], isActive: true, status: "approved" });
+      }
+    } else if (requestedRole === "HOD") {
+      approvers = await User.find({ $or: [{ role: "Principal" }, { isAdmin: true }], isActive: true, status: "approved" });
+    }
+
+    if (approvers.length > 0) {
+      const team = approvers.map((a) => a._id);
+      const identifier = emailValue || prnValue || "User";
+      const text = `New ${requestedRole} registration requires your approval: ${name} (${identifier})`;
+      
+      await Notice.create({
+        team,
+        text,
+        notiType: "alert",
+      });
+    }
+  }
+
   // Only auto-login principals; everyone else must wait for approval.
   if (isAdmin) {
     createJWT(res, user._id);
